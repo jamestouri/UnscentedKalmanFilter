@@ -50,6 +50,8 @@ UKF::UKF() {
   // State Dimension
   n_x_ = 5;
     
+  
+    
     //Augmented state
     
   n_aug_ = 7;
@@ -72,9 +74,48 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   Complete this function! Make sure you switch between lidar and radar
   measurements.
   */
-    cout << "UKF" << endl;
     
-    if 
+    if (!is_initialized_) {
+        cout << "UKF:" << endl;
+        x_ << 1, 1, 1, 1, 0.1;
+        
+        // init covariance matrix
+        P_ << 0.15, 0, 0, 0, 0,
+        0, 0.15, 0, 0, 0,
+        0,    0, 1, 0, 0,
+        0,    0, 0, 1, 0,
+        0,    0, 0, 0, 1;
+        
+        if (meas_package.sensor_type_ == MeasurementPackage::RADAR){
+            float rho = meas_package.raw_measurements_(0);
+            float phi = meas_package.raw_measurements_(1);
+            float rho_dot = meas_package.raw_measurements_(2);
+            x_(0) = rho*cos(phi);
+            x_(1) = rho*sin(phi);
+            x_(2) = rho_dot*cos(phi);
+            x_(3) = rho_dot*sin(phi);
+        } else if (meas_package.sensor_type_ == MeasurementPackage:: LASER) {
+           
+            x_(0) = meas_package.raw_measurements_(0);
+            x_(1) = meas_package.raw_measurements_(1);
+        }
+        
+        is_initialized_ = true;
+        
+        return;
+    }
+    
+    float dt = (meas_package.timestamp_  - time_us_) / 100000.0;
+    time_us_ = meas_package.timestamp_;
+    
+    Prediction(dt);
+    
+    if(meas_package.MeasurementPackage:: RADAR) {
+        UpdateRadar(meas_package);
+    }
+    else if (meas_package.MeasurementPackage::LASER) {
+        UpdateLidar(meas_package);
+    }
     
 }
 
@@ -90,6 +131,15 @@ void UKF::Prediction(double delta_t) {
   Complete this function! Estimate the object's location. Modify the state
   vector, x_. Predict sigma points, the state, and the state covariance matrix.
   */
+    //Sigma point matrix
+    Eigen::MatrixXd Xsig = MatrixXd(n_x_, 2 * n_x_ + 1);
+    //Calculate Square Root of P
+    Eigen::MatrixXd A = P_.llt().matrixL();
+    
+    
+    
+
+    
     
 }
 
