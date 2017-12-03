@@ -60,6 +60,9 @@ UKF::UKF() {
   // Lambda
     lambda_ = 3 - n_aug_;
     
+    nis_laser_ = 0.0;
+    nis_radar_ = 0.0;
+    
 }
 
 UKF::~UKF() {}
@@ -258,7 +261,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
     //Measurement dimenstion
     int n_z = 2;
     
-    Eigen::MatrixXd zsig = Eigen::MatrixXd(n_z, 2 * n_aug_ + 1);
+    Eigen::MatrixXd Zsig = Eigen::MatrixXd(n_z, 2 * n_aug_ + 1);
     
     for (int i = 0; i < 2 * n_aug_ + 1; i++){
         
@@ -266,8 +269,8 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
         double p_x = Xsig_pred_(0,i);
         double p_y = Xsig_pred_(1, i);
         
-        zsig(0, i) = p_x;
-        zsig(1, i) = p_y;
+        Zsig(0, i) = p_x;
+        Zsig(1, i) = p_y;
         
     }
     //predicted measurement mean
@@ -275,7 +278,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
     
     z_pred.fill(0.0);
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
-        z_pred = z_pred + weights_(i) * zsig.col(i);
+        z_pred = z_pred + weights_(i) * Zsig.col(i);
     }
     
     //Measurement covariance
@@ -285,12 +288,39 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
     S.fill(0.0);
     for(int i = 0; i < 2 * n_aug_ + 1; i++) {
         //residual
-        VectorXd z_diff = zsig.col(i) - z_pred;
+        VectorXd z_diff = Zsig.col(i) - z_pred;
         
         S = S + weights_(i) * z_diff * z_diff.transpose();
     }
     
+    // Add noise
     
+    Eigen::MatrixXd R = Eigen::MatrixXd(n_z, n_z);
+    R << std_laspx_*std_laspx_, 0,
+    0, std_laspy_*std_laspy_;
+    
+    S = S + R;
+    
+    MatrixXd Tc = MatrixXd(n_x_, n_z);
+    Tc.fill(0.0);
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        //residual
+        VectorXd z_diff = Zsig.col(i) - z_pred;
+        
+        // state difference
+        VectorXd x_diff = Xsig_pred_.col(i) - x_;
+        
+        Tc = Tc + weights_(i) * x_diff * z_diff.transpose();
+    }
+    
+    Eigen::MatrixXd K = Tc * S.inverse();
+    VectorXd z_diff = z - z_pred;
+    
+    //NIS
+    nis_laser_ = z_diff.transpose() * S.inverse() * z_diff;
+    
+    x_ = x_ + K * z_diff;
+    P_ = P_ - K*S*K.transpose();
     
 }
 
@@ -307,4 +337,34 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the radar NIS.
   */
+    
+    //Measurement dimension
+    int n_z = 2;
+    
+    Eigen::MatrixXd Zsig = Eigen::MatrixXd(n_z, 2 * n_aug_ + 1);
+    
+    Eigen::MatrixXd Tc = Eigen::MatrixXd(n_z, n_z);
+    Eigen::VectorXd x = Eigen::VectorXd(n_x_);
+    
+    Eigen::MatrixXd xsig = Eigen::MatrixXd(n_x_, 2 * n_aug_ + 1);
+    
+    VectorXd z_pred = VectorXd(n_z);
+    
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        //residual
+        VectorXd z_diff = Zsig.col(i) - z_pred;
+        //angle normalization
+        while (z_diff(1)> M_PI) z_diff(1)-=2.*M_PI;
+        while (z_diff(1)<-M_PI) z_diff(1)+=2.*M_PI;
+        
+        // state difference
+        VectorXd x_diff = xsig.col(i) - x;
+        //angle normalization
+        while (x_diff(3)> M_PI) x_diff(3)-=2.*M_PI;
+        while (x_diff(3)<-M_PI) x_diff(3)+=2.*M_PI;
+        
+        Tc = Tc + weights(i) * x_diff * z_diff.transpose();
+    }
+    
+    
 }
