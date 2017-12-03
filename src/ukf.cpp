@@ -255,6 +255,42 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
     
     Eigen::VectorXd z = meas_package.raw_measurements_;
     
+    //Measurement dimenstion
+    int n_z = 2;
+    
+    Eigen::MatrixXd zsig = Eigen::MatrixXd(n_z, 2 * n_aug_ + 1);
+    
+    for (int i = 0; i < 2 * n_aug_ + 1; i++){
+        
+        
+        double p_x = Xsig_pred_(0,i);
+        double p_y = Xsig_pred_(1, i);
+        
+        zsig(0, i) = p_x;
+        zsig(1, i) = p_y;
+        
+    }
+    //predicted measurement mean
+    Eigen::VectorXd z_pred = Eigen::VectorXd(n_z);
+    
+    z_pred.fill(0.0);
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        z_pred = z_pred + weights_(i) * zsig.col(i);
+    }
+    
+    //Measurement covariance
+    
+    Eigen::MatrixXd S = Eigen::MatrixXd(n_z, n_z);
+    
+    S.fill(0.0);
+    for(int i = 0; i < 2 * n_aug_ + 1; i++) {
+        //residual
+        VectorXd z_diff = zsig.col(i) - z_pred;
+        
+        S = S + weights_(i) * z_diff * z_diff.transpose();
+    }
+    
+    
     
 }
 
