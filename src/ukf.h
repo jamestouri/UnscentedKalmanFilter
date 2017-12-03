@@ -5,6 +5,7 @@
 #include "Eigen/Dense"
 #include <vector>
 #include <string>
+#include <math.h>
 #include <fstream>
 
 using Eigen::MatrixXd;
