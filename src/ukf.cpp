@@ -8,6 +8,7 @@ using Eigen::MatrixXd;
 using Eigen::VectorXd;
 using std::vector;
 
+
 /**
  * Initializes Unscented Kalman filter
  * This is scaffolding, do not modify
@@ -341,6 +342,9 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     //Measurement dimension
     int n_z = 2;
     
+    Eigen::VectorXd z = meas_package.raw_measurements_;
+    
+    
     Eigen::MatrixXd Zsig = Eigen::MatrixXd(n_z, 2 * n_aug_ + 1);
     
     Eigen::MatrixXd Tc = Eigen::MatrixXd(n_z, n_z);
@@ -351,20 +355,55 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     VectorXd z_pred = VectorXd(n_z);
     
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
-        //residual
-        VectorXd z_diff = Zsig.col(i) - z_pred;
-        //angle normalization
-        while (z_diff(1)> M_PI) z_diff(1)-=2.*M_PI;
-        while (z_diff(1)<-M_PI) z_diff(1)+=2.*M_PI;
+        // extract values for better readibility
+        double p_x = Xsig_pred_(0, i);
+        double p_y = Xsig_pred_(1, i);
+        double v   = Xsig_pred_(2, i);
+        double yaw = Xsig_pred_(3, i);
         
-        // state difference
-        VectorXd x_diff = xsig.col(i) - x;
-        //angle normalization
-        while (x_diff(3)> M_PI) x_diff(3)-=2.*M_PI;
-        while (x_diff(3)<-M_PI) x_diff(3)+=2.*M_PI;
+        double v1 = cos(yaw)*v;
+        double v2 = sin(yaw)*v;
         
-        Tc = Tc + weights(i) * x_diff * z_diff.transpose();
+        // measurement model
+        Zsig(0, i) = sqrt(p_x*p_x + p_y*p_y);
+        Zsig(1, i) = atan2(p_y, p_x);
+        Zsig(2, i) = (p_x*v1 + p_y*v2) / sqrt(p_x*p_x + p_y*p_y);
     }
+    
+    //Mean predicted measurement
+    Eigen::MatrixXd R = Eigen::MatrixXd(n_z, n_z);
+    z_pred.fill(0.0);
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        z_pred = z_pred + weights_(i) * Zsig.col(i);
+    }
+    
+    //  Covariance matrix S
+    Eigen::MatrixXd S = Eigen::MatrixXd(n_z, n_z);
+    S.fill(0.0);
+    for (int i = 0; i < 2 * n_aug_ + 1; i++){
+        Eigen::VectorXd z_diff = Zsig.col(i) - z_pred;
+        
+        while (z_diff(1)> M_PI) z_diff(1) -= 2.*M_PI;
+        while (z_diff(1)<-M_PI) z_diff(1) += 2.*M_PI;
+        
+        S = S + weights_(i) * z_diff * z_diff.transpose();
+    }
+    
+    Eigen::MatrixXd K = Tc * S.inverse();
+    
+    VectorXd z_diff = z - z_pred;
+
+    while (z_diff(1)> M_PI) z_diff(1) -= 2.*M_PI;
+    while (z_diff(1)<-M_PI) z_diff(1) += 2.*M_PI;
+    
+    //calculate NIS
+    nis_radar_ = z_diff.transpose() * S.inverse() * z_diff;
+    
+    //update state mean and covariance matrix
+    x_ = x_ + K * z_diff;
+    P_ = P_ - K*S*K.transpose();
+    
+    
     
     
 }
