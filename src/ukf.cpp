@@ -78,50 +78,51 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 
   Complete this function! Make sure you switch between lidar and radar
   measurements.
-  */
-    
-    if (!is_initialized_) {
-        cout << "UKF:" << endl;
-        x_ << 1, 1, 1, 1, 0.1;
-        
-        // init covariance matrix
-        P_ << 0.15, 0, 0, 0, 0,
-        0, 0.15, 0, 0, 0,
-        0,    0, 1, 0, 0,
-        0,    0, 0, 1, 0,
-        0,    0, 0, 0, 1;
-        
-        if (meas_package.sensor_type_ == MeasurementPackage::RADAR){
-            float rho = meas_package.raw_measurements_(0);
-            float phi = meas_package.raw_measurements_(1);
-            float rho_dot = meas_package.raw_measurements_(2);
-            x_(0) = rho*cos(phi);
-            x_(1) = rho*sin(phi);
-            x_(2) = rho_dot*cos(phi);
-            x_(3) = rho_dot*sin(phi);
-        } else if (meas_package.sensor_type_ == MeasurementPackage:: LASER) {
-           
-            x_(0) = meas_package.raw_measurements_(0);
-            x_(1) = meas_package.raw_measurements_(1);
+   */// skip processing if the both sensors are ignored
+    if ((meas_package.sensor_type_ == MeasurementPackage::RADAR && use_radar_) ||
+        (meas_package.sensor_type_ == MeasurementPackage::LASER && use_laser_))
+    {
+   
+        if (!is_initialized_) {
+            cout << "UKF:" << endl;
+            x_ << 1, 1, 1, 1, 0.1;
+            
+            // init covariance matrix
+            P_ << 1, 0, 0, 0, 0,
+                  0, 1, 0, 0, 0,
+                  0, 0, 1, 0, 0,
+                  0, 0, 0, 1, 0,
+                  0, 0, 0, 0, 1;
+            
+            if (meas_package.sensor_type_ == MeasurementPackage::RADAR && use_radar_){
+                float rho = meas_package.raw_measurements_(0);
+                float phi = meas_package.raw_measurements_(1);
+                x_(0) = rho*cos(phi);
+                x_(1) = rho*sin(phi);
+            
+            } else if (meas_package.sensor_type_ == MeasurementPackage:: LASER && use_laser_) {
+               
+                x_(0) = meas_package.raw_measurements_(0);
+                x_(1) = meas_package.raw_measurements_(1);
+            }
+            
+            is_initialized_ = true;
+            
+            return;
         }
         
-        is_initialized_ = true;
+        float dt = (meas_package.timestamp_  - time_us_) / 100000.0;
+        time_us_ = meas_package.timestamp_;
         
-        return;
+        Prediction(dt);
+        
+        if(meas_package.sensor_type_ == MeasurementPackage::RADAR) {
+            UpdateRadar(meas_package);
+        }
+        else if (meas_package.sensor_type_ == MeasurementPackage:: LASER) {
+            UpdateLidar(meas_package);
+        }
     }
-    
-    float dt = (meas_package.timestamp_  - time_us_) / 100000.0;
-    time_us_ = meas_package.timestamp_;
-    
-    Prediction(dt);
-    
-    if(meas_package.MeasurementPackage:: RADAR) {
-        UpdateRadar(meas_package);
-    }
-    else if (meas_package.MeasurementPackage::LASER) {
-        UpdateLidar(meas_package);
-    }
-    
 }
 
 /**
@@ -140,8 +141,8 @@ void UKF::Prediction(double delta_t) {
     Eigen::MatrixXd Xsig = MatrixXd(n_x_, 2 * n_x_ + 1);
     //Calculate Square Root of P
 
-    Eigen::VectorXd x_aug = Eigen::VectorXd(7);
-    Eigen::MatrixXd P_aug = Eigen::MatrixXd(7,7);
+    Eigen::VectorXd x_aug = Eigen::VectorXd(n_aug_);
+    Eigen::MatrixXd P_aug = Eigen::MatrixXd(n_aug_, n_aug_);
     
     // Matrix with predicted sigma points
     Eigen::MatrixXd Xsig_pred = Eigen::MatrixXd(n_x_, 2 * n_aug_ + 1);
@@ -151,14 +152,14 @@ void UKF::Prediction(double delta_t) {
     x_aug(6) = 0;
     
     P_aug.fill(0.0);
-    P_aug.topLeftCorner(5, 5);
+    P_aug.topLeftCorner(5, 5) = P_;
     P_aug(5, 5) = std_a_ * std_a_;
     P_aug(6, 6) = std_yawdd_ * std_yawdd_;
     
     // Create square root matrix
     Eigen::MatrixXd L = P_aug.llt().matrixL();
     
-    
+    //Create sigma points
     Xsig.col(0) = x_;
     for (int i = 0; i < 2 * n_x_ + 1; i++) {
         Xsig.col(i + 1) = x_ + sqrt(lambda_ + n_x_) * L.col(i);
@@ -177,7 +178,7 @@ void UKF::Prediction(double delta_t) {
         
         double px_p, py_p;
         
-        //avoid division by zero
+        // avoid division by zero
         if (fabs(yawd) > 0.001) {
             px_p = px + v/yawd * ( sin (yaw + yawd*delta_t) - sin(yaw));
             py_p = py + v/yawd * ( cos(yaw) - cos(yaw+yawd*delta_t) );
@@ -262,18 +263,9 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
     //Measurement dimenstion
     int n_z = 2;
     
-    Eigen::MatrixXd Zsig = Eigen::MatrixXd(n_z, 2 * n_aug_ + 1);
+    Eigen::MatrixXd Zsig = Xsig_pred_.block(0,0, n_z, 2 * n_aug_ + 1);
+
     
-    for (int i = 0; i < 2 * n_aug_ + 1; i++){
-        
-        
-        double p_x = Xsig_pred_(0,i);
-        double p_y = Xsig_pred_(1, i);
-        
-        Zsig(0, i) = p_x;
-        Zsig(1, i) = p_y;
-        
-    }
     //predicted measurement mean
     Eigen::VectorXd z_pred = Eigen::VectorXd(n_z);
     
@@ -315,6 +307,11 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
     }
     
     Eigen::MatrixXd K = Tc * S.inverse();
+    
+    float p_x = meas_package.raw_measurements_(0);
+    float p_y = meas_package.raw_measurements_(1);
+    
+    z << p_x, p_y;
     VectorXd z_diff = z - z_pred;
     
     //NIS
@@ -340,7 +337,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   */
     
     //Measurement dimension
-    int n_z = 2;
+    int n_z = 3;
     
     Eigen::VectorXd z = meas_package.raw_measurements_;
     
@@ -356,18 +353,18 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
         // extract values for better readibility
-        double p_x = Xsig_pred_(0, i);
-        double p_y = Xsig_pred_(1, i);
-        double v   = Xsig_pred_(2, i);
+        double px = Xsig_pred_(0, i);
+        double py = Xsig_pred_(1, i);
+        double v  = Xsig_pred_(2, i);
         double yaw = Xsig_pred_(3, i);
         
         double v1 = cos(yaw)*v;
         double v2 = sin(yaw)*v;
         
         // measurement model
-        Zsig(0, i) = sqrt(p_x*p_x + p_y*p_y);
-        Zsig(1, i) = atan2(p_y, p_x);
-        Zsig(2, i) = (p_x*v1 + p_y*v2) / sqrt(p_x*p_x + p_y*p_y);
+        Zsig(0, i) = sqrt(px*px + py*py);
+        Zsig(1, i) = atan2(py, px);
+        Zsig(2, i) = (px*v1 + py*v2) / sqrt(px*px + py*py);
     }
     
     //Mean predicted measurement
@@ -390,6 +387,13 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     }
     
     Eigen::MatrixXd K = Tc * S.inverse();
+    
+    float rho = meas_package.raw_measurements_(0);
+    float theta = meas_package.raw_measurements_(1);
+    float rho_dot = meas_package.raw_measurements_(2);
+    
+ 
+    z << rho, theta, rho_dot;
     
     VectorXd z_diff = z - z_pred;
 

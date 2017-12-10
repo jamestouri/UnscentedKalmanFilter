@@ -13,7 +13,7 @@ Tools::~Tools() {}
 VectorXd Tools::CalculateRMSE(const vector<VectorXd> &estimations,
                               const vector<VectorXd> &ground_truth) {
     
-    Eigen::MatrixXd rmse(4);
+    Eigen::MatrixXd rmse = Eigen::VectorXd(4);
     
     rmse << 0, 0, 0, 0;
     
