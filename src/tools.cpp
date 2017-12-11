@@ -24,19 +24,18 @@ VectorXd Tools::CalculateRMSE(const vector<VectorXd> &estimations,
     }
     
     for (unsigned int i = 0; i < estimations.size(); ++i) {
-        Eigen::VectorXd residual = estimations[i] - ground_truth[i];
-        
-        residual = residual.array() * residual.array();
-        
+        VectorXd residual = (estimations[i] - ground_truth[i]);
+  
+        residual = residual.array()*residual.array();
         rmse += residual;
     }
-    // Calculating Array
+    // Calculating mean
+    
     rmse = rmse / estimations.size();
     
     //Calculating Root Mean Squared
     rmse = rmse.array().sqrt();
     
     return rmse;
-    
     
 }
