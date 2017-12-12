@@ -57,7 +57,9 @@ UKF::UKF() {
     //Augmented state
     
   n_aug_ = 7;
-    
+    Xsig_pred_ = Eigen::MatrixXd(n_x_, 2 * n_aug_ + 1);
+
+  weights_ = VectorXd(2 * n_aug_ + 1);
   // Lambda
     lambda_ = 3 - n_aug_;
     
@@ -84,50 +86,42 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     {
    
         if (!is_initialized_) {
-            cout << "UKF:" << endl;
-            x_ << 1,1,1,1,1;
-            
-            P_ << 1,0,0,0,0,
-                0,1,0,0,0,
-                0,0,1,0,0,
-                0,0,0,1,0,
-                0,0,0,0,1;
-            
+
             time_us_ = meas_package.timestamp_;
 
-            if (meas_package.sensor_type_ == MeasurementPackage::RADAR){
-                cout << "UKF 2" << endl;
+            if (meas_package.sensor_type_ == MeasurementPackage::RADAR && use_radar_){
 
                 float rho = meas_package.raw_measurements_(0);
                 float phi = meas_package.raw_measurements_(1);
                 x_(0) = rho*cos(phi);
                 x_(1) = rho*sin(phi);
             
-            } else if (meas_package.sensor_type_ == MeasurementPackage:: LASER) {
-               cout << "UKF 3" << endl;
+            } else if (meas_package.sensor_type_ == MeasurementPackage:: LASER && use_laser_) {
                 x_(0) = meas_package.raw_measurements_(0);
                 x_(1) = meas_package.raw_measurements_(1);
-
             }
-
             is_initialized_ = true;
-            
+
             return;
         }
-        
-        float dt = (meas_package.timestamp_  - time_us_) / 100000.0;
+
+        float dt = (meas_package.timestamp_  - time_us_) / 1000000.0;
         time_us_ = meas_package.timestamp_;
-        
+//        cout << "UKF 6" << endl;
+
         Prediction(dt);
-        
+//        cout << "UKF 9" << endl;
         if(meas_package.sensor_type_ == MeasurementPackage::RADAR) {
-            cout << "UKF 4" << endl;
+//            cout << "UFK 10" << endl;
 
             UpdateRadar(meas_package);
 
+
         }
+
         else if (meas_package.sensor_type_ == MeasurementPackage:: LASER) {
-            cout << "UKF 5" << endl;
+//            cout << "UFK 11" << endl;
+
 
             UpdateLidar(meas_package);
 
@@ -148,35 +142,39 @@ void UKF::Prediction(double delta_t) {
   vector, x_. Predict sigma points, the state, and the state covariance matrix.
   */
     //Sigma point matrix
-    Eigen::MatrixXd Xsig = MatrixXd(n_aug_, 2 * n_x_ + 1);
+    Eigen::MatrixXd Xsig = MatrixXd(n_aug_, 2 * n_aug_ + 1);
     //Calculate Square Root of P
-
+//    cout << "UFK 1" << endl;
     Eigen::VectorXd x_aug = Eigen::VectorXd(n_aug_);
     Eigen::MatrixXd P_aug = Eigen::MatrixXd(n_aug_, n_aug_);
     
     // Matrix with predicted sigma points
-    Eigen::MatrixXd Xsig_pred = Eigen::MatrixXd(n_x_, 2 * n_aug_ + 1);
-    
+//    cout << "UFK 2" << endl;
+
     x_aug.head(5) = x_;
     x_aug(5) = 0;
     x_aug(6) = 0;
-    
+//    cout << "UFK 3" << endl;
+
     P_aug.fill(0.0);
     P_aug.topLeftCorner(5, 5) = P_;
     P_aug(5, 5) = std_a_ * std_a_;
     P_aug(6, 6) = std_yawdd_ * std_yawdd_;
-    
+//    cout << "UFK 4" << endl;
+
     // Create square root matrix
     Eigen::MatrixXd L = P_aug.llt().matrixL();
-    
+//    cout << "UFK 5" << endl;
+
     //Create sigma points
-    Xsig.col(0) = x_aug;
-    for (int i = 0; i < n_aug_; i++) {
-        Xsig.col(i + 1) = x_aug + sqrt(lambda_ + n_aug_) * L.col(i);
-        Xsig.col(i + n_aug_ + 1) = x_aug + sqrt(lambda_ + n_aug_) * L.col(i);
-        
+    Xsig.col(0)  = x_aug;
+    for (int i = 0; i< n_aug_; i++)
+    {
+        Xsig.col(i+1) = x_aug + std::sqrt(lambda_ + n_aug_) * L.col(i);
+        Xsig.col(i+1+n_aug_) = x_aug - std::sqrt(lambda_ + n_aug_) * L.col(i);
     }
-    
+//    cout << "UFK 7" << endl;
+
     //predict sigma points
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
         double px = Xsig(0, i);
@@ -188,7 +186,8 @@ void UKF::Prediction(double delta_t) {
         double nu_yawdd = Xsig(6, i);
         
         double px_p, py_p;
-        
+        //    cout << "UFK 10" << endl;
+
         // avoid division by zero
         if (fabs(yawd) > 0.001) {
             px_p = px + v/yawd * ( sin (yaw + yawd*delta_t) - sin(yaw));
@@ -204,49 +203,49 @@ void UKF::Prediction(double delta_t) {
         double yawd_p = yawd;
         
         // Add noise
-        px_p = px_p + 0.5*nu_a*delta_t*delta_t * cos(yaw);
-        py_p = py_p + 0.5*nu_a*delta_t*delta_t * sin(yaw);
-        v_p = v_p + nu_a*delta_t;
+        px_p = px_p + 0.5 * nu_a * delta_t*delta_t * cos(yaw);
+        py_p = py_p + 0.5 * nu_a * delta_t*delta_t * sin(yaw);
+        v_p = v_p + nu_a * delta_t;
         
-        yaw_p = yaw_p + 0.5*nu_yawdd*delta_t*delta_t;
-        yawd_p = yawd_p + nu_yawdd*delta_t;
+        yaw_p = yaw_p + 0.5 * nu_yawdd * delta_t*delta_t;
+        yawd_p = yawd_p + nu_yawdd * delta_t;
         
         //write predicted sigma point into right column
-        Xsig_pred(0,i) = px_p;
-        Xsig_pred(1,i) = py_p;
-        Xsig_pred(2,i) = v_p;
-        Xsig_pred(3,i) = yaw_p;
-        Xsig_pred(4,i) = yawd_p;
+        Xsig_pred_(0,i) = px_p;
+        Xsig_pred_(1,i) = py_p;
+        Xsig_pred_(2,i) = v_p;
+        Xsig_pred_(3,i) = yaw_p;
+        Xsig_pred_(4,i) = yawd_p;
         
     }
     
     // Predict Mean and Covariance
     
     //         Sigma point weights
-    Eigen::VectorXd weights = Eigen::VectorXd(2 * n_aug_ + 1);
     
     
-    weights(0) = lambda_ / (lambda_ + n_aug_);
+    weights_(0) = lambda_ / (lambda_ + n_aug_);
     
     for (int i = 1; i < 2 * n_aug_ + 1; i++) {
-        weights(i) =  0.5 * (lambda_ + n_aug_);
+        weights_(i) =  0.5 / (lambda_ + n_aug_);
     }
-    
+//    cout << "UFK 8" << endl;
+
     //         Predict State Mean
     x_.fill(0.0);
     
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
-        x_ = x_ + weights(i) * Xsig_pred.col(i);
+        x_ = x_ + weights_(i) * Xsig_pred_.col(i);
     }
     
     P_.fill(0.0);
     
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
-        Eigen::VectorXd x_diff = Xsig_pred.col(i) - x_;
+        Eigen::VectorXd x_diff = Xsig_pred_.col(i) - x_;
         while (x_diff(3)> M_PI) x_diff(3)-=2.*M_PI;
         while (x_diff(3)<-M_PI) x_diff(3)+=2.*M_PI;
         
-        P_ = P_ + weights(i) * x_diff * x_diff.transpose() ;
+        P_ = P_ + weights_(i) * x_diff * x_diff.transpose() ;
     }
 }
 
@@ -343,45 +342,51 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     
     //Measurement dimension
     int n_z = 3;
-    
+//    cout << "UFK 12" << endl;
+
     Eigen::VectorXd z = meas_package.raw_measurements_;
     
     
     Eigen::MatrixXd Zsig = Eigen::MatrixXd(n_z, 2 * n_aug_ + 1);
     
-    Eigen::MatrixXd Tc = Eigen::MatrixXd(n_z, n_z);
+    Eigen::MatrixXd Tc = Eigen::MatrixXd(n_x_, n_z);
     
-    Eigen::MatrixXd xsig = Eigen::MatrixXd(n_x_, 2 * n_aug_ + 1);
     
     VectorXd z_pred = VectorXd(n_z);
     
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
         // extract values for better readibility
-        double px = Xsig_pred_(0, i);
-        double py = Xsig_pred_(1, i);
-        double v  = Xsig_pred_(2, i);
-        double yaw = Xsig_pred_(3, i);
+//        cout << "UFK 13" << endl;
+
+        double p_x = Xsig_pred_(0,i);
+        double p_y = Xsig_pred_(1,i);
+        double v  = Xsig_pred_(2,i);
+        double yaw = Xsig_pred_(3,i);
+        double v_x = cos(yaw)*v;
+        double v_y = sin(yaw)*v;
         
-        double v1 = cos(yaw)*v;
-        double v2 = sin(yaw)*v;
-        
-        // measurement model
-        Zsig(0, i) = sqrt(px*px + py*py);
-        Zsig(1, i) = atan2(py, px);
-        Zsig(2, i) = (px*v1 + py*v2) / sqrt(px*px + py*py);
+        //measurement model
+        Zsig(0,i) = sqrt(p_x*p_x + p_y*p_y);
+        Zsig(1,i) = atan2(p_y,p_x);
+        Zsig(2,i) = (p_x*v_x + p_y*v_y ) / sqrt(p_x*p_x + p_y*p_y);
+
     }
     
     //Mean predicted measurement
     Eigen::MatrixXd R = Eigen::MatrixXd(n_z, n_z);
     z_pred.fill(0.0);
+//    cout << "UFK 16" << endl;
+
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+
         z_pred = z_pred + weights_(i) * Zsig.col(i);
     }
-    
+
     //  Covariance matrix S
     Eigen::MatrixXd S = Eigen::MatrixXd(n_z, n_z);
     S.fill(0.0);
     for (int i = 0; i < 2 * n_aug_ + 1; i++){
+
         Eigen::VectorXd z_diff = Zsig.col(i) - z_pred;
         
         while (z_diff(1)> M_PI) z_diff(1) -= 2.*M_PI;
@@ -389,29 +394,64 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
         
         S = S + weights_(i) * z_diff * z_diff.transpose();
     }
-    
+//    cout << "UFK 17" << endl;
+
+    R <<    std_radr_*std_radr_, 0, 0,
+    0, std_radphi_*std_radphi_, 0,
+    0, 0,std_radrd_*std_radrd_;
+//    cout << "UFK 18" << endl;
+
+    S = S + R;
+   // TC cross correlation
+    Tc.fill(0.0);
+    for (int i = 0; i < 2 * n_aug_ + 1; i++)
+    {
+//        cout << "UFK 19" << endl;
+
+        //residual
+        VectorXd z_diff = Zsig.col(i) - z_pred;
+
+        // angle normalization
+        while (z_diff(1)> M_PI) z_diff(1)-=2.*M_PI;
+        while (z_diff(1)<-M_PI) z_diff(1)+=2.*M_PI;
+ //       cout << "UFK 19" << endl;
+
+        // state difference
+        VectorXd x_diff = Xsig_pred_.col(i) - x_;
+  //      cout << "UFK 20" << endl;
+
+        while (x_diff(3)> M_PI) x_diff(3)-=2.*M_PI;
+        while (x_diff(3)<-M_PI) x_diff(3)+=2.*M_PI;
+ //       cout << "UFK 21" << endl;
+
+        Tc = Tc + weights_(i) * x_diff * z_diff.transpose();
+ //       cout << "UFK 22" << endl;
+
+    }
     Eigen::MatrixXd K = Tc * S.inverse();
     
     float rho = meas_package.raw_measurements_(0);
     float theta = meas_package.raw_measurements_(1);
     float rho_dot = meas_package.raw_measurements_(2);
     
- 
+
     z << rho, theta, rho_dot;
     
     VectorXd z_diff = z - z_pred;
 
     while (z_diff(1)> M_PI) z_diff(1) -= 2.*M_PI;
     while (z_diff(1)<-M_PI) z_diff(1) += 2.*M_PI;
-    
+
     //calculate NIS
     NIS_radar = z_diff.transpose() * S.inverse() * z_diff;
-    
+//    cout << "UFK 20" << endl;
+
     //update state mean and covariance matrix
     x_ = x_ + K * z_diff;
     P_ = P_ - K*S*K.transpose();
     
-    
+   // cout << "UFK 21" << endl;
+
     
     
 }
