@@ -27,10 +27,10 @@ UKF::UKF() {
   P_ = MatrixXd(5, 5);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 10;
+  std_a_ = 2;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 10;
+  std_yawdd_ = .2;
 
   // Laser measurement noise standard deviation position1 in m
   std_laspx_ = 0.15;
@@ -86,6 +86,13 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     {
    
         if (!is_initialized_) {
+            x_ << 1, 1, 1, 1, .1;
+            
+            P_ << .1, 0, 0, 0, 0,
+                  0, .1, 0, 0, 0,
+                  0, 0, 1, 0, 0,
+                  0, 0, 0, 1, 0,
+                   0, 0, 0, 0, .1;
 
             time_us_ = meas_package.timestamp_;
 
@@ -232,11 +239,7 @@ void UKF::Prediction(double delta_t) {
 //    cout << "UFK 8" << endl;
 
     //         Predict State Mean
-    x_.fill(0.0);
-    
-    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
-        x_ = x_ + weights_(i) * Xsig_pred_.col(i);
-    }
+    x_ = Xsig_pred_ * weights_;
     
     P_.fill(0.0);
     
@@ -297,7 +300,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
     R << std_laspx_*std_laspx_, 0, 0, std_laspy_*std_laspy_;
     
     S = S + R;
-    
+    // Tc Cross Correlation
     MatrixXd Tc = MatrixXd(n_x_, n_z);
     Tc.fill(0.0);
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
